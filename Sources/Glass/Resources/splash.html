@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Glass Splash</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Urbanist:wght@100&display=swap" rel="stylesheet">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body {
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    background: transparent;
+    -webkit-font-smoothing: antialiased;
+  }
+  .stage {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  /* Ambient light layers */
+  .ambient {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    opacity: 0;
+    will-change: opacity;
+  }
+  .ambient-a {
+    background: radial-gradient(ellipse at 35% 40%, rgba(100,150,255,0.04) 0%, transparent 60%);
+  }
+  .ambient-b {
+    background: radial-gradient(ellipse at 65% 55%, rgba(255,200,120,0.025) 0%, transparent 50%);
+  }
+  .word {
+    display: flex;
+    gap: 0;
+    font-family: 'Urbanist', sans-serif;
+    font-weight: 100;
+    font-size: 56px;
+    letter-spacing: 0.18em;
+    color: #fff;
+    user-select: none;
+    position: relative;
+    z-index: 2;
+  }
+  .word span {
+    display: inline-block;
+    will-change: transform, filter, opacity;
+    filter: blur(16px);
+    opacity: 0;
+  }
+  /* Specular overlay */
+  .specular {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    pointer-events: none;
+    z-index: 3;
+    mix-blend-mode: overlay;
+    opacity: 0;
+    will-change: opacity;
+  }
+  .specular .spec-word {
+    font-family: 'Urbanist', sans-serif;
+    font-weight: 100;
+    font-size: 56px;
+    letter-spacing: 0.18em;
+    background: linear-gradient(
+      170deg,
+      rgba(255,255,255,0.0) 0%,
+      rgba(255,255,255,0.9) 35%,
+      rgba(255,255,255,0.0) 55%,
+      rgba(255,255,255,0.3) 80%,
+      rgba(255,255,255,0.0) 100%
+    );
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+</style>
+</head>
+<body>
+<div class="stage">
+  <div class="ambient ambient-a" id="ambA"></div>
+  <div class="ambient ambient-b" id="ambB"></div>
+  <div class="word" id="word">
+    <span>G</span><span>L</span><span>A</span><span>S</span><span>S</span>
+  </div>
+  <div class="specular" id="specular">
+    <div class="spec-word">GLASS</div>
+  </div>
+</div>
+
+<script>
+// ── Tuned values from brainstorm prototype ──
+// Variant: Dissolve | Font: Urbanist 100 | Origin: center (0.5)
+// Overlap: 0.6 | Speed: 1× | Text opacity: 1.0 | Ambient: 1.0
+
+const letters = Array.from(document.getElementById('word').querySelectorAll('span'));
+const specular = document.getElementById('specular');
+const ambA = document.getElementById('ambA');
+const ambB = document.getElementById('ambB');
+
+function smootherStep(t) { return t * t * t * (t * (t * 6 - 15) + 10); }
+function easeInCubic(t) { return t * t * t; }
+
+// Per-letter timing: origin=center, overlap=0.6
+function getLetterTimings() {
+  const n = letters.length;
+  const origin = 0.5 * (n - 1); // center
+  const maxDist = Math.max(origin, (n - 1) - origin) || 1;
+  const letterDur = 0.6 * 0.7 + 0.3; // overlap=0.6 → 0.72
+
+  return letters.map((el, i) => {
+    const dist = Math.abs(i - origin) / maxDist;
+    const maxStart = 1 - letterDur;
+    const start = dist * maxStart;
+    const end = start + letterDur;
+    return { el, start, end };
+  });
+}
+
+const timings = getLetterTimings();
+let startTime = null;
+let phase = 'fadein'; // fadein → hold → fadeout → done
+
+const FADEIN_DUR = 1500;
+const HOLD_DUR = 800;
+const FADEOUT_DUR = 900;
+
+function tick(now) {
+  if (!startTime) startTime = now;
+  const elapsed = now - startTime;
+
+  if (phase === 'fadein') {
+    const globalT = Math.min(1, elapsed / FADEIN_DUR);
+    let sumProgress = 0;
+
+    timings.forEach(({ el, start, end }) => {
+      const lt = Math.max(0, Math.min(1, (globalT - start) / (end - start)));
+      const ease = smootherStep(lt);
+      sumProgress += ease;
+      el.style.filter = `blur(${(16 * (1 - ease)).toFixed(1)}px)`;
+      el.style.opacity = ease.toFixed(3);
+    });
+
+    // Specular — last 40%
+    const specT = Math.max(0, (globalT - 0.6) / 0.4);
+    specular.style.opacity = (smootherStep(specT) * 0.5).toFixed(3);
+
+    // Ambient syncs
+    const avgProgress = sumProgress / letters.length;
+    const ambVal = smootherStep(avgProgress);
+    ambA.style.opacity = ambVal.toFixed(3);
+    ambB.style.opacity = ambVal.toFixed(3);
+
+    if (elapsed >= FADEIN_DUR) {
+      phase = 'hold';
+      startTime = now;
+    }
+  }
+  else if (phase === 'hold') {
+    // Everything stays at peak
+    ambA.style.opacity = '1';
+    ambB.style.opacity = '1';
+
+    if (elapsed >= HOLD_DUR) {
+      phase = 'fadeout';
+      startTime = now;
+    }
+  }
+  else if (phase === 'fadeout') {
+    const t = Math.min(1, elapsed / FADEOUT_DUR);
+
+    // Dissolve variant: smooth opacity + slight blur
+    const ease = smootherStep(t);
+    letters.forEach(el => {
+      el.style.opacity = (1 - ease).toFixed(3);
+      el.style.filter = `blur(${(ease * 6).toFixed(1)}px)`;
+    });
+
+    // Specular fades faster
+    specular.style.opacity = (0.5 * (1 - smootherStep(Math.min(1, t * 1.8)))).toFixed(3);
+
+    // Ambient ramps down
+    const ambVal = 1 - smootherStep(t);
+    ambA.style.opacity = ambVal.toFixed(3);
+    ambB.style.opacity = ambVal.toFixed(3);
+
+    if (elapsed >= FADEOUT_DUR) {
+      phase = 'done';
+      // Notify Swift that animation is complete
+      try {
+        window.webkit.messageHandlers.splashDone.postMessage('done');
+      } catch(e) {}
+    }
+  }
+
+  if (phase !== 'done') {
+    requestAnimationFrame(tick);
+  }
+}
+
+// Wait for font to load, then start
+document.fonts.ready.then(() => {
+  // Small delay so the window is visible
+  setTimeout(() => requestAnimationFrame(tick), 100);
+});
+</script>
+</body>
+</html>

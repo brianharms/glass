@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="stylesheet" href="sidebar.css">
+</head>
+<body>
+    <div id="panel">
+        <div class="panel-header-row">
+            <div class="panel-title">GLASS</div>
+            <div class="panel-close" id="panel-close">&#x2715;</div>
+        </div>
+        <div class="panel-scroll">
+            <div class="section">
+                <div class="section-header expanded">
+                    <span class="section-arrow">&#x25BC;</span>
+                    <span class="section-title">APPEARANCE</span>
+                </div>
+                <div class="section-content">
+                    <div id="slider-transparency" class="slider-container"></div>
+                    <div id="slider-cornerRadius" class="slider-container"></div>
+                    <div id="invert-toggle" class="toggle-container"></div>
+                    <div id="color-picker" class="color-picker-container"></div>
+                </div>
+            </div>
+            <div class="debug-separator" id="debug-separator"></div>
+            <div id="debug-section">
+                <!-- Debug sliders will be populated by initDebugSliders() -->
+            </div>
+            <div id="defaults-section" style="padding: 10px 14px 20px;">
+                <div style="display:flex; gap:8px;">
+                    <button id="btn-save-defaults" style="
+                        flex:1; padding:6px 0; border:none; border-radius:5px;
+                        background:rgba(255,255,255,0.08); color:rgba(255,255,255,0.6);
+                        font-size:10px; font-weight:600; letter-spacing:0.8px;
+                        text-transform:uppercase; cursor:pointer;
+                    ">Save Defaults</button>
+                    <button id="btn-reset-defaults" style="
+                        flex:1; padding:6px 0; border:none; border-radius:5px;
+                        background:rgba(255,255,255,0.04); color:rgba(255,255,255,0.35);
+                        font-size:10px; font-weight:600; letter-spacing:0.8px;
+                        text-transform:uppercase; cursor:pointer;
+                    ">Reset</button>
+                </div>
+                <div id="defaults-status" style="
+                    font-size:9px; color:rgba(255,255,255,0.3); text-align:center;
+                    margin-top:6px; height:14px;
+                "></div>
+            </div>
+        </div>
+    </div>
+
+    <script src="sidebar.js"></script>
+    <script>
+        // Panel color state (used by both color picker and transparency slider)
+        var panelColorR = 18, panelColorG = 18, panelColorB = 18;
+        var currentOpacity = 0.90;
+
+        function updatePanelBg() {
+            document.body.style.setProperty('--panel-bg',
+                'rgba(' + panelColorR + ', ' + panelColorG + ', ' + panelColorB + ', ' + currentOpacity + ')');
+            document.body.style.setProperty('--panel-color-r', panelColorR);
+            document.body.style.setProperty('--panel-color-g', panelColorG);
+            document.body.style.setProperty('--panel-color-b', panelColorB);
+        }
+
+        initSections();
+
+        createSlider('slider-transparency', {
+            id: 'transparency',
+            label: 'TRANSPARENCY',
+            min: 0.0,
+            max: 1.0,
+            step: 0.01,
+            value: 0.90,
+            onChange: function(val) {
+                currentOpacity = val;
+                document.body.style.setProperty('--panel-opacity', val);
+                updatePanelBg();
+                sendToSwift({ type: 'slider', id: 'transparency', value: val });
+            }
+        });
+
+        createSlider('slider-cornerRadius', {
+            id: 'cornerRadius',
+            label: 'CORNER RADIUS',
+            min: 0,
+            max: 24,
+            step: 1,
+            value: 8,
+            onChange: function(val) {
+                document.body.style.setProperty('--panel-radius', val + 'px');
+                sendToSwift({ type: 'slider', id: 'cornerRadius', value: val });
+            }
+        });
+
+        // ── Invert toggle — true RGB inversion ──
+        (function() {
+            var container = document.getElementById('invert-toggle');
+            if (!container) return;
+
+            var row = document.createElement('div');
+            row.className = 'toggle-row';
+
+            var label = document.createElement('div');
+            label.className = 'ui-label';
+            label.textContent = 'INVERT COLORS';
+
+            var toggle = document.createElement('div');
+            toggle.className = 'ui-toggle';
+            toggle.innerHTML = '<div class="ui-toggle-thumb"></div>';
+
+            var inverted = false;
+            var savedR, savedG, savedB;
+
+            function invertChannel(c) { return 255 - c; }
+
+            // Determine if inverted colors are light or dark, set UI vars accordingly
+            function applyUIColors(isLight) {
+                var ch = isLight ? '0' : '255';
+                document.body.style.setProperty('--label', 'rgba(' + ch + ',' + ch + ',' + ch + ',0.4)');
+                document.body.style.setProperty('--value', 'rgba(' + ch + ',' + ch + ',' + ch + ',0.78)');
+                document.body.style.setProperty('--track', 'rgba(' + ch + ',' + ch + ',' + ch + ',0.13)');
+                document.body.style.setProperty('--thumb', 'rgba(' + ch + ',' + ch + ',' + ch + ',0.65)');
+                document.body.style.setProperty('--thumb-glow', 'rgba(' + ch + ',' + ch + ',' + ch + ',0.15)');
+                document.body.style.setProperty('--section-header', 'rgba(' + ch + ',' + ch + ',' + ch + ',0.45)');
+                document.body.style.setProperty('--section-header-expanded', 'rgba(' + ch + ',' + ch + ',' + ch + ',0.92)');
+                document.body.style.setProperty('--title-color', 'rgba(' + ch + ',' + ch + ',' + ch + ',0.85)');
+                document.body.style.setProperty('--scrollbar', 'rgba(' + ch + ',' + ch + ',' + ch + ',0.08)');
+                document.body.style.setProperty('--scrollbar-hover', 'rgba(' + ch + ',' + ch + ',' + ch + ',0.18)');
+                document.body.style.setProperty('--toggle-off', 'rgba(' + ch + ',' + ch + ',' + ch + ',0.10)');
+                document.body.style.setProperty('--toggle-on', 'rgba(' + ch + ',' + ch + ',' + ch + ',0.38)');
+            }
+
+            toggle.addEventListener('click', function() {
+                inverted = !inverted;
+                toggle.classList.toggle('active', inverted);
+                document.body.setAttribute('data-inverted', inverted);
+
+                if (inverted) {
+                    savedR = panelColorR; savedG = panelColorG; savedB = panelColorB;
+                    panelColorR = invertChannel(savedR);
+                    panelColorG = invertChannel(savedG);
+                    panelColorB = invertChannel(savedB);
+                    updatePanelBg();
+                    var lum = (panelColorR * 0.2126 + panelColorG * 0.7152 + panelColorB * 0.0722) / 255;
+                    applyUIColors(lum > 0.5);
+                } else {
+                    panelColorR = savedR; panelColorG = savedG; panelColorB = savedB;
+                    updatePanelBg();
+                    var lum = (panelColorR * 0.2126 + panelColorG * 0.7152 + panelColorB * 0.0722) / 255;
+                    applyUIColors(lum > 0.5);
+                }
+                sendToSwift({ type: 'invert', value: inverted });
+            });
+
+            row.appendChild(label);
+            row.appendChild(toggle);
+            container.appendChild(row);
+        })();
+
+        // ── Color picker ──
+        (function() {
+            var container = document.getElementById('color-picker');
+            if (!container) return;
+
+            var label = document.createElement('div');
+            label.className = 'ui-label';
+            label.textContent = 'SIDEBAR COLOR';
+
+            var row = document.createElement('div');
+            row.className = 'color-picker-row';
+
+            var colorInput = document.createElement('input');
+            colorInput.type = 'color';
+            colorInput.value = '#121212';
+
+            colorInput.addEventListener('input', function() {
+                var hex = colorInput.value;
+                panelColorR = parseInt(hex.substr(1, 2), 16);
+                panelColorG = parseInt(hex.substr(3, 2), 16);
+                panelColorB = parseInt(hex.substr(5, 2), 16);
+                updatePanelBg();
+            });
+
+            row.appendChild(label);
+            row.appendChild(colorInput);
+            container.appendChild(row);
+        })();
+
+        // ── Close button ──
+        document.getElementById('panel-close').addEventListener('click', function() {
+            sendToSwift({ type: 'close' });
+        });
+
+        initDebugSliders();
+
+        // ── Save/Reset defaults ──
+        document.getElementById('btn-save-defaults').addEventListener('click', function() {
+            var allValues = collectAllSliderValues();
+            sendToSwift({ type: 'saveDefaults', values: allValues });
+            var status = document.getElementById('defaults-status');
+            status.textContent = 'Saved ' + Object.keys(allValues).length + ' values';
+            setTimeout(function() { status.textContent = ''; }, 2000);
+        });
+
+        document.getElementById('btn-reset-defaults').addEventListener('click', function() {
+            sendToSwift({ type: 'resetDefaults' });
+            var status = document.getElementById('defaults-status');
+            status.textContent = 'Reset to factory defaults — relaunch to apply';
+            setTimeout(function() { status.textContent = ''; }, 3000);
+        });
+
+        // Collect ALL current values (sliders + dropdowns + toggles)
+        function collectAllSliderValues() {
+            var values = {};
+            // Appearance sliders
+            var transparencyEl = document.querySelector('#slider-transparency input[type="range"]');
+            if (transparencyEl) values['transparency'] = parseFloat(transparencyEl.value);
+            var radiusEl = document.querySelector('#slider-cornerRadius input[type="range"]');
+            if (radiusEl) values['cornerRadius'] = parseFloat(radiusEl.value);
+            // All debug sliders
+            Object.keys(DEBUG_SLIDERS).forEach(function(section) {
+                DEBUG_SLIDERS[section].forEach(function(cfg) {
+                    var el = document.querySelector('#debug-slider-' + cfg.id + ' input[type="range"]');
+                    if (el) values[cfg.swiftId || cfg.id] = parseFloat(el.value);
+                });
+            });
+            // Font picker
+            var fontSelect = document.querySelector('#debug-section select');
+            if (fontSelect) values['font-family'] = fontSelect.value;
+            return values;
+        }
+
+        // Called from Swift to restore saved values
+        function applySavedDefaults(values) {
+            Object.keys(values).forEach(function(key) {
+                var val = values[key];
+                if (key === 'font-family' && typeof val === 'string') {
+                    var fontSelect = document.querySelector('#debug-section select');
+                    if (fontSelect) {
+                        fontSelect.value = val;
+                        fontSelect.dispatchEvent(new Event('change'));
+                    }
+                    return;
+                }
+                // Numeric sliders
+                var el = document.querySelector('#slider-' + key + ' input[type="range"]')
+                      || document.querySelector('#debug-slider-' + key + ' input[type="range"]');
+                if (el) {
+                    el.value = val;
+                    el.dispatchEvent(new Event('input'));
+                }
+            });
+        }
+
+        // Ask Swift for saved defaults on load
+        sendToSwift({ type: 'loadDefaults' });
+    </script>
+</body>
+</html>
